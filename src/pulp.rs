@@ -625,3 +625,176 @@ impl LpAffineExpression {
             .collect()
     }
 }
+
+
+use std::collections::HashMap;
+use std::cmp::Ordering;
+
+#[derive(Debug, Clone)]
+pub struct LpConstraint {
+    expression: LpAffineExpression,
+    sense: i32,
+    pi: Option<f64>,
+    slack: Option<f64>,
+    modified: bool,
+}
+
+impl LpConstraint {
+    pub fn new(e: Option<LpAffineExpression>, sense: i32, name: Option<String>, rhs: Option<f64>) -> Self {
+        let mut expression = e.unwrap_or_default();
+        if let Some(r) = rhs {
+            expression.constant -= r;
+        }
+        LpConstraint {
+            expression,
+            sense,
+            pi: None,
+            slack: None,
+            modified: true,
+        }
+    }
+
+    pub fn get_lb(&self) -> Option<f64> {
+        if self.sense == 1 || self.sense == 0 {
+            Some(-self.expression.constant)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_ub(&self) -> Option<f64> {
+        if self.sense == -1 || self.sense == 0 {
+            Some(-self.expression.constant)
+        } else {
+            None
+        }
+    }
+
+    pub fn change_rhs(&mut self, rhs: f64) {
+        self.expression.constant = -rhs;
+        self.modified = true;
+    }
+
+    pub fn copy(&self) -> Self {
+        LpConstraint {
+            expression: self.expression.clone(),
+            sense: self.sense,
+            pi: self.pi,
+            slack: self.slack,
+            modified: self.modified,
+        }
+    }
+
+    pub fn empty_copy(&self) -> Self {
+        LpConstraint {
+            expression: LpAffineExpression::default(),
+            sense: self.sense,
+            pi: None,
+            slack: None,
+            modified: true,
+        }
+    }
+
+    pub fn valid(&self, eps: f64) -> bool {
+        let val = self.expression.value();
+        if self.sense == 0 {
+            (val).abs() <= eps
+        } else {
+            val * self.sense as f64 >= -eps
+        }
+    }
+
+    pub fn to_dict(&self) -> HashMap<String, serde_json::Value> {
+        let mut dict = HashMap::new();
+        dict.insert("sense".to_string(), serde_json::json!(self.sense));
+        dict.insert("pi".to_string(), serde_json::json!(self.pi));
+        dict.insert("constant".to_string(), serde_json::json!(self.expression.constant));
+        dict.insert("name".to_string(), serde_json::json!(self.expression.name));
+        dict.insert("coefficients".to_string(), serde_json::json!(self.expression.to_dict()));
+        dict
+    }
+
+    pub fn from_dict(dict: &HashMap<String, serde_json::Value>) -> Self {
+        let mut expression = LpAffineExpression::from_dict(dict["coefficients"].as_object().unwrap());
+        expression.constant = -dict["constant"].as_f64().unwrap();
+        LpConstraint {
+            expression,
+            sense: dict["sense"].as_i64().unwrap() as i32,
+            pi: dict["pi"].as_f64(),
+            slack: None,
+            modified: true,
+        }
+    }
+}
+
+impl std::fmt::Display for LpConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.expression)?;
+        if self.sense == 0 {
+            write!(f, " == ")
+        } else if self.sense == 1 {
+            write!(f, " >= ")
+        } else {
+            write!(f, " <= ")
+        }?;
+        write!(f, "{}", -self.expression.constant)
+    }
+}
+
+impl std::ops::Add for &LpConstraint {
+    type Output = LpConstraint;
+
+    fn add(self, other: &LpConstraint) -> LpConstraint {
+        let mut result = self.copy();
+        if self.sense * other.sense >= 0 {
+            result.expression = &result.expression + &other.expression;
+            result.sense |= other.sense;
+        } else {
+            result.expression = &result.expression - &other.expression;
+            result.sense |= -other.sense;
+        }
+        result
+    }
+}
+
+impl std::ops::Sub for &LpConstraint {
+    type Output = LpConstraint;
+
+    fn sub(self, other: &LpConstraint) -> LpConstraint {
+        let mut result = self.copy();
+        result.expression = &result.expression - &other.expression;
+        result.sense = -result.sense;
+        result
+    }
+}
+
+impl std::ops::Neg for &LpConstraint {
+    type Output = LpConstraint;
+
+    fn neg(self) -> LpConstraint {
+        let mut result = self.copy();
+        result.expression = -&result.expression;
+        result.sense = -result.sense;
+        result
+    }
+}
+
+impl std::ops::Mul<f64> for &LpConstraint {
+    type Output = LpConstraint;
+
+    fn mul(self, other: f64) -> LpConstraint {
+        let mut result = self.copy();
+        result.expression = &result.expression * other;
+        result
+    }
+}
+
+impl std::ops::Div<f64> for &LpConstraint {
+    type Output = LpConstraint;
+
+    fn div(self, other: f64) -> LpConstraint {
+        let mut result = self.copy();
+        result.expression = &result.expression / other;
+        result
+    }
+}
