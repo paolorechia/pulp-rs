@@ -485,14 +485,34 @@ impl LpAffineExpression {
 
 impl fmt::Display for LpAffineExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let terms: Vec<String> = self
-            .terms
-            .iter()
-            .map(|(v, &x)| format!("{}*{}", x, v.name.as_ref().unwrap_or(&String::new())))
-            .collect();
-        write!(f, "{}", terms.join(" + "))?;
-        if self.constant != 0.0 {
-            write!(f, " + {}", self.constant)?;
+        let mut s = String::new();
+        for (v, &x) in self.terms.iter().filter(|(_, &x)| x != 0.0) {
+            if x < 0.0 {
+                if !s.is_empty() {
+                    s.push_str(" - ");
+                } else {
+                    s.push('-');
+                }
+            } else if !s.is_empty() {
+                s.push_str(" + ");
+            }
+            let abs_x = x.abs();
+            if (abs_x - 1.0).abs() < 1e-10 {
+                s.push_str(&v.name.as_ref().unwrap_or(&String::new()));
+            } else {
+                println!("v.name: {}", v.name.as_ref().unwrap_or(&String::new()));
+                s.push_str(&format!("{}*{}", abs_x, v.name.as_ref().unwrap_or(&String::new())));
+            }
+        }
+        if s.is_empty() {
+            write!(f, "{}", self.constant)?;
+        } else {
+            write!(f, "{}", s)?;
+            if self.constant < 0.0 {
+                write!(f, " - {}", -self.constant)?;
+            } else if self.constant > 0.0 {
+                write!(f, " + {}", self.constant)?;
+            }
         }
         Ok(())
     }
