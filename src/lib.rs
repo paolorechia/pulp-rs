@@ -38,7 +38,7 @@ impl OptimizedClass {
 }
 
 trait HasValue {
-    fn varValue(&self) -> Option<f64>;
+    fn valueOrDefault(&self) -> Option<f64>;
 }
 
 
@@ -79,7 +79,7 @@ impl LpElement {
 }
 
 impl HasValue for LpElement {
-    fn varValue(&self) -> Option<f64> {
+    fn valueOrDefault(&self) -> Option<f64> {
         None
     }
 }
@@ -123,7 +123,7 @@ struct LpVariable {
 }
 
 impl HasValue for LpVariable {
-    fn varValue(&self) -> Option<f64> {
+    fn valueOrDefault(&self) -> Option<f64> {
         self.var_value
     }
 }
@@ -163,7 +163,7 @@ struct LpAffineExpression {
 }
 
 impl HasValue for LpAffineExpression {
-    fn varValue(&self) -> Option<f64> {
+    fn valueOrDefault(&self) -> Option<f64> {
         None
     }
 }
@@ -235,6 +235,15 @@ impl LpAffineExpression {
         Ok(self.constant != 0.0 || !self.terms.is_empty())
     }
 
+    fn valueOrDefault(&self) -> f64 {
+        let mut s = self.constant;
+        for (v, &x) in self.terms.iter() {
+            if let Some(var_value) = v.valueOrDefault() {
+                s += var_value * x;
+            }
+        }
+        s
+    }
 
 
     fn __str__(&self) -> PyResult<String> {

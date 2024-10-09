@@ -68,5 +68,32 @@ def test_lp_affine_str():
     # assert expr_with_vars.value() == pulp_expr_with_vars.value()
 
 
+@pytest.mark.skip(reason="Unfinished implementation")
+def test_var_value_or_default():
+    x = pulp_rs.LpElement("x")
+    assert x.valueOrDefault() is None
+
+    x.set_value(42)
+    assert x.valueOrDefault() == 42
+
+    # Test other classes
+    expr = pulp_rs.LpAffineExpression(constant=5.0, name="expr")
+    assert expr.valueOrDefault() is None
+
+    expr.set_value(42)
+    assert expr.valueOrDefault() == 42
+
+    constraint = pulp_rs.LpConstraint(name="constraint", sense=pulp_rs.Sense.Eq, rhs=10.0)
+    assert constraint.valueOrDefault() is None
+
+    constraint.set_value(42)
+    assert constraint.valueOrDefault() == 42
+
+    variable = pulp_rs.LpVariable(name="variable", lowBound=0, upBound=10, cat=pulp_rs.LpContinuous)
+    assert variable.valueOrDefault() is None
+
+    variable.set_value(42)
+    assert variable.valueOrDefault() == 42
+
 if __name__ == "__main__":
     pytest.main([__file__])
