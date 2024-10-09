@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use regex::Regex;
@@ -128,13 +130,13 @@ impl LpAffineExpression {
         Ok(expr)
     }
 
-    // fn set_name(&mut self, name: Option<String>) {
-    //     if let Some(name) = name {
-    //         self.name = Some(LpElement::sanitize_name(&name));
-    //     } else {
-    //         self.name = None;
-    //     }
-    // }
+    fn setName(&mut self, name: Option<String>) {
+        if let Some(name) = name {
+            self.name = Some(LpElement::sanitize_name(&name));
+        } else {
+            self.name = None;
+        }
+    }
 
     // fn get_name(&self) -> PyResult<String> {
     //     Ok(self.name.clone().unwrap_or_default())
