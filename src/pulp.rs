@@ -971,9 +971,360 @@ impl LpProblem {
         serde_json::json!({})
     }
 
-    // Other methods like from_dict, to_json, from_json, etc. would be implemented here
+    pub fn from_dict(mut kwargs: HashMap<String, serde_json::Value>) -> Self {
+        let dj = kwargs.remove("dj").and_then(|v| v.as_f64());
+        let var_value = kwargs.remove("varValue").and_then(|v| v.as_f64());
+        
+        let mut var = Self::new(
+            kwargs.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            kwargs.get("lowBound").and_then(|v| v.as_f64()),
+            kwargs.get("upBound").and_then(|v| v.as_f64()),
+            kwargs.get("cat").and_then(|v| v.as_i64()).map(|c| c as i32).unwrap_or(0),
+        );
+        
+        var.dj = dj;
+        var.var_value = var_value;
+        var
+    }
+
+    pub fn add_expression(&mut self, e: LpAffineExpression) {
+        self.expression = e;
+        self.add_variable_to_constraints(&e);
+    }
+
+    pub fn matrix(
+        name: &str,
+        indices: &[Vec<String>],
+        low_bound: Option<f64>,
+        up_bound: Option<f64>,
+        cat: i32,
+        index_start: Vec<String>,
+    ) -> Vec<LpVariable> {
+        if indices.is_empty() {
+            return vec![];
+        }
+
+        let mut name = name.to_string();
+        if !name.contains('%') {
+            name += &"%s".repeat(indices.len());
+        }
+
+        let index = &indices[0];
+        let indices = &indices[1..];
+
+        if indices.is_empty() {
+            index
+                .iter()
+                .map(|i| {
+                    let mut new_index_start = index_start.clone();
+                    new_index_start.push(i.to_string());
+                    LpVariable::new(
+                        format!(&name, new_index_start.join("_")),
+                        low_bound,
+                        up_bound,
+                        cat,
+                    )
+                })
+                .collect()
+        } else {
+            index
+                .iter()
+                .flat_map(|i| {
+                    let mut new_index_start = index_start.clone();
+                    new_index_start.push(i.to_string());
+                    LpVariable::matrix(&name, indices, low_bound, up_bound, cat, new_index_start)
+                })
+                .collect()
+        }
+    }
+
+    pub fn dicts(
+        name: &str,
+        indices: &[Vec<String>],
+        low_bound: Option<f64>,
+        up_bound: Option<f64>,
+        cat: i32,
+        index_start: Vec<String>,
+    ) -> HashMap<String, LpVariable> {
+        if indices.is_empty() {
+            return HashMap::new();
+        }
+
+        let mut name = name.to_string();
+        if !name.contains('%') {
+            name += &"%s".repeat(indices.len());
+        }
+
+        let index = &indices[0];
+        let indices = &indices[1..];
+
+        let mut d = HashMap::new();
+        if indices.is_empty() {
+            for i in index {
+                let mut new_index_start = index_start.clone();
+                new_index_start.push(i.to_string());
+                d.insert(
+                    i.clone(),
+                    LpVariable::new(
+                        format!(&name, new_index_start.join("_")),
+                        low_bound,
+                        up_bound,
+                        cat,
+                    ),
+                );
+            }
+        } else {
+            for i in index {
+                let mut new_index_start = index_start.clone();
+                new_index_start.push(i.to_string());
+                d.insert(
+                    i.clone(),
+                    LpVariable::dicts(&name, indices, low_bound, up_bound, cat, new_index_start),
+                );
+            }
+        }
+        d
+    }
+
+    pub fn dict(
+        name: &str,
+        indices: &[Vec<String>],
+        low_bound: Option<f64>,
+        up_bound: Option<f64>,
+        cat: i32,
+    ) -> HashMap<Vec<String>, LpVariable> {
+        let mut name = name.to_string();
+        if !name.contains('%') {
+            name += &"%s".repeat(indices.len());
+        }
+
+        let index = if indices.len() > 1 {
+            indices.iter().fold(vec![vec![]], |acc, list| {
+                acc.into_iter()
+                    .flat_map(|v| list.iter().map(|i| {
+                        let mut new_v = v.clone();
+                        new_v.push(i.clone());
+                        new_v
+                    }))
+                    .collect()
+            })
+        } else if indices.len() == 1 {
+            indices[0].iter().map(|i| vec![i.clone()]).collect()
+        } else {
+            return HashMap::new();
+        };
+
+        index
+            .into_iter()
+            .map(|i| {
+                (
+                    i.clone(),
+                    LpVariable::new(format!(&name, i.join("_")), low_bound, up_bound, cat),
+                )
+            })
+            .collect()
+    }
+
+    pub fn get_lb(&self) -> Option<f64> {
+        self.low_bound
+    }
+
+    pub fn get_ub(&self) -> Option<f64> {
+        self.up_bound
+    }
+
+    pub fn bounds(&mut self, low: Option<f64>, up: Option<f64>) {
+        self.low_bound = low;
+        self.up_bound = up;
+        self.modified = true;
+    }
+
+    pub fn positive(&mut self) {
+        self.bounds(Some(0.0), None);
+    }
+
+    pub fn value(&self) -> Option<f64> {
+        self.var_value
+    }
+
+    pub fn rounded_value(&self, eps: f64) -> Option<f64> {
+        if self.category == LpCategory::Integer
+            && self.var_value.is_some()
+            && (self.var_value.unwrap().round() - self.var_value.unwrap()).abs() <= eps
+        {
+            Some(self.var_value.unwrap().round())
+        } else {
+            self.var_value
+        }
+    }
+
+    pub fn value_or_default(&self) -> f64 {
+        if let Some(value) = self.var_value {
+            value
+        } else if let Some(low_bound) = self.low_bound {
+            if let Some(up_bound) = self.up_bound {
+                if 0.0 >= low_bound && 0.0 <= up_bound {
+                    0.0
+                } else if low_bound >= 0.0 {
+                    low_bound
+                } else {
+                    up_bound
+                }
+            } else if 0.0 >= low_bound {
+                0.0
+            } else {
+                low_bound
+            }
+        } else if let Some(up_bound) = self.up_bound {
+            if 0.0 <= up_bound {
+                0.0
+            } else {
+                up_bound
+            }
+        } else {
+            0.0
+        }
+    }
+
+    pub fn valid(&self, eps: f64) -> bool {
+        if self.name.as_deref() == Some("__dummy") && self.var_value.is_none() {
+            return true;
+        }
+        if self.var_value.is_none() {
+            return false;
+        }
+        let value = self.var_value.unwrap();
+        if let Some(up_bound) = self.up_bound {
+            if value > up_bound + eps {
+                return false;
+            }
+        }
+        if let Some(low_bound) = self.low_bound {
+            if value < low_bound - eps {
+                return false;
+            }
+        }
+        if self.category == LpCategory::Integer
+            && (value.round() - value).abs() > eps
+        {
+            return false;
+        }
+        true
+    }
+
+    pub fn infeasibility_gap(&self, mip: bool) -> Result<f64, Box<dyn Error>> {
+        let value = self.var_value.ok_or("variable value is None")?;
+        if let Some(up_bound) = self.up_bound {
+            if value > up_bound {
+                return Ok(value - up_bound);
+            }
+        }
+        if let Some(low_bound) = self.low_bound {
+            if value < low_bound {
+                return Ok(value - low_bound);
+            }
+        }
+        if mip && self.category == LpCategory::Integer && value.round() - value != 0.0 {
+            return Ok(value.round() - value);
+        }
+        Ok(0.0)
+    }
+
+    pub fn is_binary(&self) -> bool {
+        self.category == LpCategory::Integer && self.low_bound == Some(0.0) && self.up_bound == Some(1.0)
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.category == LpCategory::Integer
+    }
+
+    pub fn is_free(&self) -> bool {
+        self.low_bound.is_none() && self.up_bound.is_none()
+    }
+
+    pub fn is_constant(&self) -> bool {
+        self.low_bound.is_some() && self.up_bound == self.low_bound
+    }
+
+    pub fn is_positive(&self) -> bool {
+        self.low_bound == Some(0.0) && self.up_bound.is_none()
+    }
+
+    pub fn as_cplex_lp_variable(&self) -> String {
+        if self.is_free() {
+            format!("{} free", self.name.as_deref().unwrap_or(""))
+        } else if self.is_constant() {
+            format!("{} = {:.12}", self.name.as_deref().unwrap_or(""), self.low_bound.unwrap())
+        } else {
+            let mut s = String::new();
+            if let Some(low_bound) = self.low_bound {
+                if low_bound == 0.0 && self.category == LpCategory::Continuous {
+                    // Do nothing
+                } else {
+                    s.push_str(&format!("{:.12} <= ", low_bound));
+                }
+            } else {
+                s.push_str("-inf <= ");
+            }
+            s.push_str(self.name.as_deref().unwrap_or(""));
+            if let Some(up_bound) = self.up_bound {
+                s.push_str(&format!(" <= {:.12}", up_bound));
+            }
+            s
+        }
+    pub fn set_initial_value(&mut self, val: f64, check: bool) -> Result<bool, String> {
+        let lb = self.low_bound;
+        let ub = self.up_bound;
+
+        if let Some(lb_val) = lb {
+            if val < lb_val {
+                if !check {
+                    return Ok(false);
+                }
+                return Err(format!(
+                    "In variable {}, initial value {} is smaller than lowBound {}",
+                    self.name.as_deref().unwrap_or(""), val, lb_val
+                ));
+            }
+        }
+
+        if let Some(ub_val) = ub {
+            if val > ub_val {
+                if !check {
+                    return Ok(false);
+                }
+                return Err(format!(
+                    "In variable {}, initial value {} is greater than upBound {}",
+                    self.name.as_deref().unwrap_or(""), val, ub_val
+                ));
+            }
+        }
+
+        self.var_value = Some(val);
+        Ok(true)
+    }
+
+    pub fn fix_value(&mut self) {
+        if let Some(val) = self.var_value {
+            self.low_bound = Some(val);
+            self.up_bound = Some(val);
+        }
+    }
+
+    pub fn is_fixed(&self) -> bool {
+        self.is_constant()
+    }
+
+    pub fn unfix_value(&mut self) {
+        self.low_bound = self._lowbound_original;
+        self.up_bound = self._upbound_original;
+    }
+    }
 }
 
 pub trait LpSolver {
     fn solve(&self, problem: &mut LpProblem) -> i32;
 }
+
+use std::collections::HashMap;
+use std::str::FromStr;
