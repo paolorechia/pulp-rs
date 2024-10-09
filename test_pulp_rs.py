@@ -62,7 +62,9 @@ def test_lp_affine_str():
     assert expr_with_vars.isNumericalConstant() == False
     assert str(expr_with_vars.atom()) == str(x)
 
-
+    assert expr_with_vars.__bool__() == True
+    assert expr_with_vars.value() == 11.5
+    
 
 if __name__ == "__main__":
     pytest.main([__file__])

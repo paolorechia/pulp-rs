@@ -37,6 +37,11 @@ impl OptimizedClass {
     }
 }
 
+trait HasValue {
+    fn varValue(&self) -> Option<f64>;
+}
+
+
 #[pyclass]
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct LpElement {
@@ -73,6 +78,12 @@ impl LpElement {
     }
 }
 
+impl HasValue for LpElement {
+    fn varValue(&self) -> Option<f64> {
+        None
+    }
+}
+
 impl LpElement {
     fn sanitize_name(name: &str) -> String {
         lazy_static! {
@@ -96,11 +107,65 @@ impl fmt::Display for LpElement {
 
 #[pyclass]
 #[derive(Clone)]
+struct LpVariable {
+    #[pyo3(get, set)]
+    name: Option<String>,
+    #[pyo3(get, set)]
+    low_bound: Option<f64>,
+    #[pyo3(get, set)]
+    up_bound: Option<f64>,
+    #[pyo3(get, set)]
+    cat: String,
+    #[pyo3(get, set)]
+    var_value: Option<f64>,
+    #[pyo3(get, set)]
+    dj: Option<f64>,
+}
+
+impl HasValue for LpVariable {
+    fn varValue(&self) -> Option<f64> {
+        self.var_value
+    }
+}
+
+// needs to finish implementing the rest of the methods
+#[pymethods]
+impl LpVariable {
+    #[new]
+    #[pyo3(signature = (name, low_bound=None, up_bound=None, cat="Continuous", e=None))]
+    fn new(name: Option<String>, low_bound: Option<f64>, up_bound: Option<f64>, cat: &str, e: Option<&PyAny>) -> PyResult<Self> {
+        let mut var = LpVariable {
+            name,
+            low_bound,
+            up_bound,
+            cat: cat.to_string(),
+            var_value: None,
+            dj: None,
+        };
+
+        if var.cat == "Binary" {
+            var.low_bound = Some(0.0);
+            var.up_bound = Some(1.0);
+            var.cat = "Integer".to_string();
+        }
+        Ok(var)
+    }
+}
+
+
+#[pyclass]
+#[derive(Clone)]
 struct LpAffineExpression {
     #[pyo3(get, set)]
     constant: f64,
     name: Option<String>,
     terms: IndexMap<LpElement, f64>,
+}
+
+impl HasValue for LpAffineExpression {
+    fn varValue(&self) -> Option<f64> {
+        None
+    }
 }
 
 #[pymethods]
@@ -169,6 +234,16 @@ impl LpAffineExpression {
     fn __bool__(&self) -> PyResult<bool> {
         Ok(self.constant != 0.0 || !self.terms.is_empty())
     }
+
+    fn value(&self) -> f64 {
+        let mut s = self.constant;
+        for (v, &x) in self.terms.iter() {
+            if let Some(var_value) = v.varValue() {
+                s += var_value * x;
+            }
+        }
+        s
+    } 
 
     fn __str__(&self) -> PyResult<String> {
         let mut s = String::new();
