@@ -254,24 +254,30 @@ impl LpAffineExpression {
         let mut s = String::new();
         for v in self.sorted_keys()? {
             let val = self.terms.get(&v).unwrap();
-            if *val < 0.0 {
-                if !s.is_empty() {
-                    s.push_str(" - ");
-                } else {
+
+            if s.is_empty() {
+                if *val < 0.0 {
                     s.push('-');
                 }
-                s.push_str(&format!("{}", val.abs()));
-            } else if !s.is_empty() {
-                s.push_str(" + ");
-                s.push_str(&format!("{}", val));
+                if *val != 1.0 {
+                    s.push_str(&format!("{}", val.abs()));
+                    s.push('*');
+                }
+                s.push_str(&v.to_string());
             } else {
-                s.push_str(&format!("{}", val));
+                if *val < 0.0 {
+                    s.push_str(" - ");
+                } else {
+                    s.push_str(" + ");
+                }
+                if *val != 1.0 {
+                    s.push_str(&format!("{}", val.abs()));
+                    s.push('*');
+                }
+                s.push_str(&v.to_string());
             }
-            if *val != 1.0 {
-                s.push('*');
-            }
-            s.push_str(&v.to_string());
         }
+
         if s.is_empty() {
             s = self.constant.to_string();
         } else {
