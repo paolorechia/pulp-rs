@@ -138,10 +138,9 @@ impl LpAffineExpression {
         }
     }
 
-    // fn get_name(&self) -> PyResult<String> {
-    //     Ok(self.name.clone().unwrap_or_default())
-    // }
-
+    fn getName(&self) -> PyResult<String> {
+        Ok(self.name.clone().unwrap_or_default())
+    }
 
     // fn __str__(&self) -> PyResult<String> {
     //     Ok(self.to_string())
