@@ -350,3 +350,67 @@ impl ToString for LpAffineExpression {
         terms.join(" + ")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::Python;
+
+    #[test]
+    fn test_optimized_class() {
+        let mut obj = OptimizedClass::new();
+        assert_eq!(obj.get_value(), 0);
+        obj.set_value(42);
+        assert_eq!(obj.get_value(), 42);
+    }
+
+    #[test]
+    fn test_lp_element() {
+        Python::with_gil(|py| {
+            let element = LpElement::new(Some("test_var".to_string()));
+            assert_eq!(element.__str__().unwrap(), "test_var");
+            assert_eq!(element.__repr__().unwrap(), "test_var");
+            assert!(element.__bool__().unwrap());
+        });
+    }
+
+    #[test]
+    fn test_lp_affine_expression() {
+        Python::with_gil(|py| {
+            let expr = LpAffineExpression::new(py, None, 5.0, None).unwrap();
+            assert_eq!(expr.constant, 5.0);
+            assert!(expr.terms.is_empty());
+
+            let element = Py::new(py, LpElement::new(Some("x".to_string()))).unwrap();
+            let mut expr = LpAffineExpression::new(py, None, 0.0, None).unwrap();
+            expr.add_term(element, 2.0);
+
+            assert_eq!(expr.__str__().unwrap(), "2*x + 0");
+            assert!(expr.__bool__().unwrap());
+            assert!(!expr.is_numerical_constant());
+        });
+    }
+
+    #[test]
+    fn test_lp_affine_expression_operations() {
+        Python::with_gil(|py| {
+            let expr1 = LpAffineExpression::new(py, None, 5.0, None).unwrap();
+            let expr2 = LpAffineExpression::new(py, None, 3.0, None).unwrap();
+
+            let sum = expr1.__add__(&expr2, py).unwrap();
+            assert_eq!(sum.constant, 8.0);
+
+            let diff = expr1.__sub__(&expr2, py).unwrap();
+            assert_eq!(diff.constant, 2.0);
+
+            let product = expr1.__mul__(&2.0, py).unwrap();
+            assert_eq!(product.constant, 10.0);
+
+            let quotient = expr1.__truediv__(&2.0, py).unwrap();
+            assert_eq!(quotient.constant, 2.5);
+
+            let negation = expr1.__neg__();
+            assert_eq!(negation.constant, -5.0);
+        });
+    }
+}
