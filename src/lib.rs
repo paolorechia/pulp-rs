@@ -245,6 +245,10 @@ impl LpAffineExpression {
         s
     }
 
+    fn addTerm(&mut self, key: LpElement, value: f64) {
+        *self.terms.entry(key).or_insert(0.0) += value;
+    }
+
 
     fn __str__(&self) -> PyResult<String> {
         let mut s = String::new();

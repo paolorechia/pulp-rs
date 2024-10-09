@@ -67,6 +67,16 @@ def test_lp_affine_str():
     # Python library crashes, '.value' seems a dead code path
     # assert expr_with_vars.value() == pulp_expr_with_vars.value()
 
+    # compare addTerm with original python library
+    expr_with_vars.addTerm(pulp_rs.LpElement("x"), 1)
+    pulp_expr_with_vars.addterm(pulp.LpElement("x"), 1)
+    assert str(expr_with_vars) == str(pulp_expr_with_vars)
+
+    expr_with_vars.addTerm(pulp_rs.LpElement("y"), 1)
+    pulp_expr_with_vars.addterm(pulp.LpElement("y"), 1)
+    assert str(expr_with_vars) == str(pulp_expr_with_vars)
+
+    
 
 @pytest.mark.skip(reason="Unfinished implementation")
 def test_var_value_or_default():
