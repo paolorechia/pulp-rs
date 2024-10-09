@@ -89,7 +89,6 @@ impl LpElement {
 struct LpAffineExpression {
     #[pyo3(get, set)]
     constant: f64,
-    #[pyo3(get, set)]
     name: Option<String>,
     terms: HashMap<LpElement, f64>,
 }
@@ -130,7 +129,7 @@ impl LpAffineExpression {
         Ok(expr)
     }
 
-    fn setName(&mut self, name: Option<String>) {
+    fn set_name(&mut self, name: Option<String>) {
         if let Some(name) = name {
             self.name = Some(LpElement::sanitize_name(&name));
         } else {
@@ -138,7 +137,7 @@ impl LpAffineExpression {
         }
     }
 
-    fn getName(&self) -> PyResult<String> {
+    fn get_name(&self) -> PyResult<String> {
         Ok(self.name.clone().unwrap_or_default())
     }
 

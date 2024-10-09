@@ -1,5 +1,6 @@
 import pytest
 import pulp_rs
+import pulp
 
 def test_optimized_class():
     optimized = pulp_rs.OptimizedClass()
@@ -20,6 +21,9 @@ def test_lp_element():
     pos_element = +element
     assert pos_element.name == "x"
 
+    # Test behaviour matches original library
+    assert str(pulp.LpElement("x")) == str(element)
+
 def test_lp_affine_expression():
     # Test creation with constant and name
     expr = pulp_rs.LpAffineExpression(constant=5.0, name="expr")
@@ -28,7 +32,12 @@ def test_lp_affine_expression():
 
     # Test setName and getName methods
     expr.setName("new_expr")
-    assert expr.getName() == "new_expr"
+    assert expr.name == "new_expr"
+
+    assert (
+        pulp.LpAffineExpression(constant=5.0, name="new_expr").name
+        == expr.name
+    )
 
 if __name__ == "__main__":
     pytest.main([__file__])
