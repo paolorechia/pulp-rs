@@ -1,9 +1,14 @@
 use pyo3::prelude::*;
+use std::collections::HashMap;
+use regex::Regex;
+use lazy_static::lazy_static;
 
 /// A Python module implemented in Rust.
 #[pymodule]
 fn pulp_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<OptimizedClass>()?;
+    m.add_class::<LpElement>()?;
+    m.add_class::<LpAffineExpression>()?;
     Ok(())
 }
 
@@ -28,16 +33,11 @@ impl OptimizedClass {
     }
 }
 
-
-use std::collections::HashMap;
-use regex::Regex;
-
 #[pyclass]
+#[derive(Clone, Hash, PartialEq, Eq)]
 struct LpElement {
     #[pyo3(get, set)]
     name: Option<String>,
-    hash: usize,
-    modified: bool,
 }
 
 #[pymethods]
@@ -45,11 +45,7 @@ impl LpElement {
     #[new]
     fn new(name: Option<String>) -> Self {
         let name = name.map(|n| LpElement::sanitize_name(&n));
-        LpElement {
-            name,
-            hash: std::ptr::addr_of!(name) as usize,
-            modified: true,
-        }
+        LpElement { name }
     }
 
     fn __str__(&self) -> PyResult<String> {
@@ -60,8 +56,8 @@ impl LpElement {
         self.__str__()
     }
 
-    fn __hash__(&self) -> PyResult<usize> {
-        Ok(self.hash)
+    fn __hash__(&self) -> PyResult<isize> {
+        Ok(self.name.as_ref().map_or(0, |n| n.len() as isize))
     }
 
     fn __bool__(&self) -> PyResult<bool> {
@@ -81,14 +77,6 @@ impl LpElement {
     }
 }
 
-use std::collections::HashMap;
-use std::iter::FromIterator;
-use std::ops::{Add, Sub, Mul, Div, Neg};
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
-use regex::Regex;
-use lazy_static::lazy_static;
-
 #[pyclass]
 #[derive(Clone)]
 struct LpAffineExpression {
@@ -96,13 +84,13 @@ struct LpAffineExpression {
     constant: f64,
     #[pyo3(get, set)]
     name: Option<String>,
-    terms: HashMap<Py<LpElement>, f64>,
+    terms: HashMap<LpElement, f64>,
 }
 
 #[pymethods]
 impl LpAffineExpression {
     #[new]
-    #[args(e = "None", constant = "0.0", name = "None")]
+    #[pyo3(signature = (e=None, constant=0.0, name=None))]
     fn new(py: Python, e: Option<&PyAny>, constant: f64, name: Option<String>) -> PyResult<Self> {
         let mut expr = LpAffineExpression {
             constant,
@@ -116,17 +104,17 @@ impl LpAffineExpression {
                 expr.terms = other_expr.terms.clone();
             } else if let Ok(dict) = e.downcast::<PyDict>() {
                 for (k, v) in dict.iter() {
-                    let element: Py<LpElement> = k.extract()?;
+                    let element: LpElement = k.extract()?;
                     let coeff: f64 = v.extract()?;
                     expr.terms.insert(element, coeff);
                 }
             } else if let Ok(list) = e.downcast::<PyList>() {
                 for item in list.iter() {
-                    let (element, coeff): (Py<LpElement>, f64) = item.extract()?;
+                    let (element, coeff): (LpElement, f64) = item.extract()?;
                     expr.terms.insert(element, coeff);
                 }
-            } else if let Ok(element) = e.extract::<PyRef<LpElement>>() {
-                expr.terms.insert(element.into_py(py), 1.0);
+            } else if let Ok(element) = e.extract::<LpElement>() {
+                expr.terms.insert(element, 1.0);
             } else {
                 expr.constant = e.extract()?;
             }
@@ -147,7 +135,7 @@ impl LpAffineExpression {
         Ok(self.constant != 0.0 || !self.terms.is_empty())
     }
 
-    fn add_term(&mut self, key: Py<LpElement>, value: f64) {
+    fn add_term(&mut self, key: LpElement, value: f64) {
         *self.terms.entry(key).or_insert(0.0) += value;
     }
 
@@ -163,9 +151,9 @@ impl LpAffineExpression {
         self.clone()
     }
 
-    fn sorted_keys(&self, py: Python) -> PyResult<Vec<Py<LpElement>>> {
+    fn sorted_keys(&self) -> PyResult<Vec<LpElement>> {
         let mut keys: Vec<_> = self.terms.keys().cloned().collect();
-        keys.sort_by_key(|k| k.as_ref(py).getattr("name")?.extract::<String>().unwrap_or_default());
+        keys.sort_by_key(|k| k.name.clone().unwrap_or_default());
         Ok(keys)
     }
 
@@ -251,8 +239,7 @@ impl LpAffineExpression {
     fn to_dict(&self, py: Python) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         for (k, v) in &self.terms {
-            let k_obj: PyObject = k.as_ref(py).extract()?;
-            dict.set_item(k_obj, v)?;
+            dict.set_item(k, v)?;
         }
         Ok(dict.into())
     }
@@ -265,7 +252,7 @@ impl LpAffineExpression {
         self.terms.is_empty()
     }
 
-    fn atom(&self, py: Python) -> PyResult<Option<Py<LpElement>>> {
+    fn atom(&self) -> PyResult<Option<LpElement>> {
         if self.is_atomic() {
             Ok(self.terms.keys().next().cloned())
         } else {
@@ -276,7 +263,7 @@ impl LpAffineExpression {
     fn value(&self, py: Python) -> PyResult<Option<f64>> {
         let mut s = self.constant;
         for (v, x) in &self.terms {
-            let var_value = v.as_ref(py).getattr("varValue")?;
+            let var_value = v.getattr(py, "varValue")?;
             if var_value.is_none() {
                 return Ok(None);
             }
@@ -288,7 +275,7 @@ impl LpAffineExpression {
     fn value_or_default(&self, py: Python) -> PyResult<f64> {
         let mut s = self.constant;
         for (v, x) in &self.terms {
-            let var_value = v.as_ref(py).call_method0("valueOrDefault")?;
+            let var_value = v.call_method0(py, "valueOrDefault")?;
             s += var_value.extract::<f64>()? * x;
         }
         Ok(s)
@@ -313,7 +300,7 @@ impl LpAffineExpression {
         let mut result = Vec::new();
         for (k, v) in &self.terms {
             let dict = PyDict::new(py);
-            dict.set_item("name", k.as_ref(py).getattr("name")?)?;
+            dict.set_item("name", &k.name)?;
             dict.set_item("value", v)?;
             result.push(dict.into());
         }
@@ -344,7 +331,7 @@ impl ToString for LpAffineExpression {
         let mut terms: Vec<String> = self
             .terms
             .iter()
-            .map(|(v, &x)| format!("{}*{}", x, v.to_string()))
+            .map(|(v, &x)| format!("{}*{}", x, v.name.as_ref().unwrap_or(&String::new())))
             .collect();
         terms.push(self.constant.to_string());
         terms.join(" + ")
@@ -381,7 +368,7 @@ mod tests {
             assert_eq!(expr.constant, 5.0);
             assert!(expr.terms.is_empty());
 
-            let element = Py::new(py, LpElement::new(Some("x".to_string()))).unwrap();
+            let element = LpElement::new(Some("x".to_string()));
             let mut expr = LpAffineExpression::new(py, None, 0.0, None).unwrap();
             expr.add_term(element, 2.0);
 

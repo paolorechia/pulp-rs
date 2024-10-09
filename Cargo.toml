@@ -9,3 +9,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.18.3", features = ["extension-module"] }
+regex = "1.5"
+lazy_static = "1.4"
