@@ -235,15 +235,7 @@ impl LpAffineExpression {
         Ok(self.constant != 0.0 || !self.terms.is_empty())
     }
 
-    fn value(&self) -> f64 {
-        let mut s = self.constant;
-        for (v, &x) in self.terms.iter() {
-            if let Some(var_value) = v.varValue() {
-                s += var_value * x;
-            }
-        }
-        s
-    } 
+
 
     fn __str__(&self) -> PyResult<String> {
         let mut s = String::new();
