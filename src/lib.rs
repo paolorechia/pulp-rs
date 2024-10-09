@@ -99,7 +99,6 @@ impl fmt::Display for LpElement {
 struct LpAffineExpression {
     #[pyo3(get, set)]
     constant: f64,
-    #[pyo3(get, set)]
     name: Option<String>,
     terms: HashMap<LpElement, f64>,
 }
@@ -138,6 +137,17 @@ impl LpAffineExpression {
         }
 
         Ok(expr)
+    }
+
+    #[getter]
+    fn get_name(&self) -> Option<String> {
+        self.name.clone()
+    }
+
+    #[setter]
+    fn set_name(&mut self, name: Option<String>) {
+        // sanitize name
+        self.name = name.map(|n| LpElement::sanitize_name(&n));
     }
 
     fn setName(&mut self, name: String) {
