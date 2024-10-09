@@ -798,3 +798,182 @@ impl std::ops::Div<f64> for &LpConstraint {
         result
     }
 }
+
+
+#[derive(Clone, Debug)]
+pub struct LpFractionConstraint {
+    pub numerator: LpExpression,
+    pub denominator: LpExpression,
+    pub complement: Option<LpExpression>,
+    pub sense: LpConstraintSense,
+    pub rhs: f64,
+    pub name: Option<String>,
+}
+
+impl LpFractionConstraint {
+    pub fn new(
+        numerator: LpExpression,
+        denominator: Option<LpExpression>,
+        sense: LpConstraintSense,
+        rhs: f64,
+        name: Option<String>,
+        complement: Option<LpExpression>,
+    ) -> Self {
+        let (denominator, complement) = match (denominator, complement) {
+            (None, Some(comp)) => (numerator.clone() + comp.clone(), Some(comp)),
+            (Some(denom), None) => (denom.clone(), Some(denom - numerator.clone())),
+            (Some(denom), Some(comp)) => (denom, Some(comp)),
+            (None, None) => panic!("Either denominator or complement must be provided"),
+        };
+
+        let lhs = numerator.clone() - rhs * denominator.clone();
+        
+        Self {
+            numerator,
+            denominator,
+            complement,
+            sense,
+            rhs,
+            name,
+        }
+    }
+
+    pub fn find_lhs_value(&self) -> Result<f64, &'static str> {
+        let denom_value = self.denominator.evaluate();
+        if denom_value.abs() >= f64::EPSILON {
+            Ok(self.numerator.evaluate() / denom_value)
+        } else {
+            if self.numerator.evaluate().abs() <= f64::EPSILON {
+                Ok(1.0)
+            } else {
+                Err("Division by zero")
+            }
+        }
+    }
+
+    pub fn to_lp_constraint(&self) -> LpConstraint {
+        let lhs = &self.numerator - self.rhs * &self.denominator;
+        LpConstraint::new(lhs, self.sense, 0.0, self.name.clone())
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct LpConstraintVar {
+    constraint: LpConstraint,
+}
+
+impl LpConstraintVar {
+    pub fn new(name: Option<String>, sense: Option<i32>, rhs: Option<f64>, e: Option<LpAffineExpression>) -> Self {
+        let constraint = LpConstraint::new(e, sense.unwrap_or(0), name, rhs);
+        LpConstraintVar { constraint }
+    }
+
+    pub fn add_variable(&mut self, var: &LpVariable, coeff: f64) {
+        self.constraint.expression.add_term(var, coeff);
+    }
+
+    pub fn value(&self) -> f64 {
+        self.constraint.expression.value()
+    }
+}
+
+
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+use serde_json;
+
+#[derive(Debug, Clone)]
+pub struct LpProblem {
+    name: String,
+    objective: Option<LpAffineExpression>,
+    constraints: HashMap<String, LpConstraint>,
+    sense: i32,
+    sos1: HashMap<usize, Vec<LpVariable>>,
+    sos2: HashMap<usize, Vec<LpVariable>>,
+    status: i32,
+    sol_status: i32,
+    solver: Option<Box<dyn LpSolver>>,
+    variables: Vec<LpVariable>,
+    variable_ids: HashSet<String>,
+    dummy_var: Option<LpVariable>,
+    solution_time: f64,
+    solution_cpu_time: f64,
+    last_unused: usize,
+}
+
+impl LpProblem {
+    pub fn new(name: &str, sense: i32) -> Self {
+        LpProblem {
+            name: name.replace(" ", "_"),
+            objective: None,
+            constraints: HashMap::new(),
+            sense,
+            sos1: HashMap::new(),
+            sos2: HashMap::new(),
+            status: 0, // Assuming LpStatusNotSolved is 0
+            sol_status: 0, // Assuming LpSolutionNoSolutionFound is 0
+            solver: None,
+            variables: Vec::new(),
+            variable_ids: HashSet::new(),
+            dummy_var: None,
+            solution_time: 0.0,
+            solution_cpu_time: 0.0,
+            last_unused: 0,
+        }
+    }
+
+    pub fn add_variable(&mut self, variable: LpVariable) {
+        if !self.variable_ids.contains(&variable.name()) {
+            self.variables.push(variable.clone());
+            self.variable_ids.insert(variable.name());
+        }
+    }
+
+    pub fn add_constraint(&mut self, constraint: LpConstraint, name: Option<String>) {
+        let constraint_name = name.unwrap_or_else(|| self.unused_constraint_name());
+        self.constraints.insert(constraint_name, constraint);
+        for var in constraint.expression.terms.keys() {
+            self.add_variable(var.clone());
+        }
+    }
+
+    pub fn set_objective(&mut self, objective: LpAffineExpression) {
+        self.objective = Some(objective);
+    }
+
+    pub fn solve(&mut self) -> i32 {
+        if let Some(solver) = &self.solver {
+            let start = Instant::now();
+            let status = solver.solve(self);
+            let duration = start.elapsed();
+            self.solution_time = duration.as_secs_f64();
+            // CPU time calculation would depend on the specific solver implementation
+            status
+        } else {
+            0 // Assuming LpStatusNotSolved is 0
+        }
+    }
+
+    fn unused_constraint_name(&mut self) -> String {
+        loop {
+            self.last_unused += 1;
+            let name = format!("_C{}", self.last_unused);
+            if !self.constraints.contains_key(&name) {
+                return name;
+            }
+        }
+    }
+
+    pub fn to_dict(&self) -> serde_json::Value {
+        // Implementation of to_dict would go here
+        // This would involve serializing the problem to a JSON-like structure
+        serde_json::json!({})
+    }
+
+    // Other methods like from_dict, to_json, from_json, etc. would be implemented here
+}
+
+pub trait LpSolver {
+    fn solve(&self, problem: &mut LpProblem) -> i32;
+}
