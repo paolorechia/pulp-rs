@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 use std::collections::HashMap;
 use regex::Regex;
 use lazy_static::lazy_static;
+use pyo3::types::{PyDict, PyList};
 
 /// A Python module implemented in Rust.
 #[pymodule]
