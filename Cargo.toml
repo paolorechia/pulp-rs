@@ -11,3 +11,4 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.18.3", features = ["extension-module"] }
 regex = "1.5"
 lazy_static = "1.4"
+indexmap = "1.9.3"

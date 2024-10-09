@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use pyo3::prelude::*;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use regex::Regex;
 use lazy_static::lazy_static;
 use pyo3::types::{PyDict, PyList};
@@ -100,7 +100,7 @@ struct LpAffineExpression {
     #[pyo3(get, set)]
     constant: f64,
     name: Option<String>,
-    terms: HashMap<LpElement, f64>,
+    terms: IndexMap<LpElement, f64>,
 }
 
 #[pymethods]
@@ -111,7 +111,7 @@ impl LpAffineExpression {
         let mut expr = LpAffineExpression {
             constant,
             name,
-            terms: HashMap::new(),
+            terms: IndexMap::new(),
         };
 
         if let Some(e) = e {
@@ -152,6 +152,22 @@ impl LpAffineExpression {
 
     fn setName(&mut self, name: String) {
         self.name = Some(name);
+    }
+
+    fn isAtomic(&self) -> bool {
+        self.terms.len() == 1 && self.constant == 0.0 && self.terms.values().next().unwrap() == &1.0
+    }
+
+    fn isNumericalConstant(&self) -> bool {
+        self.terms.is_empty()
+    }
+
+    fn atom(&self) -> Option<LpElement> {
+        self.terms.keys().next().cloned()
+    }
+
+    fn __bool__(&self) -> PyResult<bool> {
+        Ok(self.constant != 0.0 || !self.terms.is_empty())
     }
 
     fn __str__(&self) -> PyResult<String> {

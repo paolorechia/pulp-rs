@@ -58,6 +58,11 @@ def test_lp_affine_str():
     pulp_expr_with_vars = pulp.LpAffineExpression({pulp.LpElement("x"): 2, pulp.LpElement("y"): 3}, constant=1.5, name="expr_with_vars")
     assert str(pulp_expr_with_vars) == str(expr_with_vars)
 
+    assert expr_with_vars.isAtomic() == False
+    assert expr_with_vars.isNumericalConstant() == False
+    assert str(expr_with_vars.atom()) == str(x)
+
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
