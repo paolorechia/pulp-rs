@@ -39,5 +39,25 @@ def test_lp_affine_expression():
         == expr.name
     )
 
+
+def test_lp_affine_str():
+    expr = "5.0"
+    # Test __str__ method
+    assert str(expr) == "5.0"
+
+    # Test with variables
+    x = pulp_rs.LpElement("x")
+    y = pulp_rs.LpElement("y")
+    expr_with_vars = pulp_rs.LpAffineExpression({x: 2, y: 3}, constant=1.5, name="expr_with_vars")
+    assert str(expr_with_vars) == "2*x + 3*y + 1.5"
+
+    # Test behaviour matches original library
+    pulp_expr = pulp.LpAffineExpression(constant=5.0, name="new_expr")
+    assert str(pulp_expr) == str(expr)
+
+    pulp_expr_with_vars = pulp.LpAffineExpression({pulp.LpElement("x"): 2, pulp.LpElement("y"): 3}, constant=1.5, name="expr_with_vars")
+    assert str(pulp_expr_with_vars) == str(expr_with_vars)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

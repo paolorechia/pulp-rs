@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use regex::Regex;
 use lazy_static::lazy_static;
 use pyo3::types::{PyDict, PyList};
+use std::fmt;
 
 /// A Python module implemented in Rust.
 #[pymodule]
@@ -84,11 +85,21 @@ impl LpElement {
     }
 }
 
+impl fmt::Display for LpElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let opt_name = self.name.clone();
+        let name = opt_name.unwrap_or_default();
+        write!(f, "{}", name).unwrap();
+        return Ok(());
+    }
+}
+
 #[pyclass]
 #[derive(Clone)]
 struct LpAffineExpression {
     #[pyo3(get, set)]
     constant: f64,
+    #[pyo3(get, set)]
     name: Option<String>,
     terms: HashMap<LpElement, f64>,
 }
@@ -129,21 +140,49 @@ impl LpAffineExpression {
         Ok(expr)
     }
 
-    fn set_name(&mut self, name: Option<String>) {
-        if let Some(name) = name {
-            self.name = Some(LpElement::sanitize_name(&name));
-        } else {
-            self.name = None;
+    fn setName(&mut self, name: String) {
+        self.name = Some(name);
+    }
+
+    fn __str__(&self) -> PyResult<String> {
+        let mut s = String::new();
+        for v in self.sorted_keys()? {
+            let val = self.terms.get(&v).unwrap();
+            if *val < 0.0 {
+                if !s.is_empty() {
+                    s.push_str(" - ");
+                } else {
+                    s.push('-');
+                }
+                s.push_str(&format!("{}", val.abs()));
+            } else if !s.is_empty() {
+                s.push_str(" + ");
+                s.push_str(&format!("{}", val));
+            } else {
+                s.push_str(&format!("{}", val));
+            }
+            if *val != 1.0 {
+                s.push('*');
+            }
+            s.push_str(&v.to_string());
         }
+        if s.is_empty() {
+            s = self.constant.to_string();
+        } else {
+            if self.constant < 0.0 {
+                s.push_str(&format!(" - {}", self.constant.abs()));
+            } else if self.constant > 0.0 {
+                s.push_str(&format!(" + {}", self.constant));
+            }
+        }
+        Ok(s)
     }
 
-    fn get_name(&self) -> PyResult<String> {
-        Ok(self.name.clone().unwrap_or_default())
+    fn sorted_keys(&self) -> PyResult<Vec<LpElement>> {
+        let mut keys: Vec<_> = self.terms.keys().cloned().collect();
+        keys.sort_by_key(|k| k.name.clone().unwrap_or_default());
+        Ok(keys)
     }
-
-    // fn __str__(&self) -> PyResult<String> {
-    //     Ok(self.to_string())
-    // }
 
     // fn __repr__(&self) -> PyResult<String> {
     //     Ok(self.to_string())
@@ -167,12 +206,6 @@ impl LpAffineExpression {
 
     // fn copy(&self) -> Self {
     //     self.clone()
-    // }
-
-    // fn sorted_keys(&self) -> PyResult<Vec<LpElement>> {
-    //     let mut keys: Vec<_> = self.terms.keys().cloned().collect();
-    //     keys.sort_by_key(|k| k.name.clone().unwrap_or_default());
-    //     Ok(keys)
     // }
 
     // fn __add__(&self, other: &PyAny, py: Python) -> PyResult<Self> {
@@ -344,17 +377,22 @@ impl LpAffineExpression {
     // }
 }
 
-impl ToString for LpAffineExpression {
-    fn to_string(&self) -> String {
-        let mut terms: Vec<String> = self
+impl fmt::Display for LpAffineExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let terms: Vec<String> = self
             .terms
             .iter()
             .map(|(v, &x)| format!("{}*{}", x, v.name.as_ref().unwrap_or(&String::new())))
             .collect();
-        terms.push(self.constant.to_string());
-        terms.join(" + ")
+        write!(f, "{}", terms.join(" + "))?;
+        if self.constant != 0.0 {
+            write!(f, " + {}", self.constant)?;
+        }
+        Ok(())
     }
 }
+
+
 
 #[cfg(test)]
 mod tests {
